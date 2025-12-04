@@ -1,9 +1,10 @@
 /*
- * Teensy 4.0 - micro-ROS Motor Controller with Automatic Reconnection
- * Subscribes to direction commands and controls DC motors
+ * Teensy 4.0 - micro-ROS Continuous Rotation Servo Controller with Automatic Reconnection
+ * Subscribes to direction commands and controls continuous rotation servos
  * Automatically reconnects to micro-ROS agent without physical reset
  */
 
+#include <Servo.h>
 #include <micro_ros_arduino.h>
 #include <stdio.h>
 #include <rcl/rcl.h>
@@ -26,20 +27,24 @@
 // Check macro that returns false on error
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){return false;}}
 
-// --- MOTOR DRIVER PINS ---
-// Adjust these based on your motor driver (L298N, TB6612, etc.)
-#define MOTOR_LEFT_PWM 3    // Left motor speed (PWM pin)
-#define MOTOR_LEFT_IN1 4    // Left motor direction
-#define MOTOR_LEFT_IN2 5    // Left motor direction
+// --- SERVO OBJECTS ---
+Servo servoRight;
+Servo servoLeft;
 
-#define MOTOR_RIGHT_PWM 6   // Right motor speed (PWM pin)
-#define MOTOR_RIGHT_IN1 7   // Right motor direction
-#define MOTOR_RIGHT_IN2 8   // Right motor direction
+// Motor Pin Connections (from your code)
+constexpr int pinFeedbackLeft = 7;
+constexpr int pinFeedbackRight = 8;
+constexpr int pinControlLeft = 5;
+constexpr int pinControlRight = 6;
 
-// Motor speeds (0-255)
-#define SPEED_FORWARD 180
-#define SPEED_TURN 150
-#define SPEED_STOP 0
+// Servo values for continuous rotation servos
+// Adjust these based on your servo calibration
+// Typical values: 90 = stop, < 90 = one direction, > 90 = other direction
+constexpr int SERVO_STOP = 94;
+constexpr int SERVO_FORWARD_RIGHT = 89;    // Right servo forward
+constexpr int SERVO_FORWARD_LEFT = 98;   // Left servo forward (reversed)
+constexpr int SERVO_BACKWARD_RIGHT = 98; // Right servo backward
+constexpr int SERVO_BACKWARD_LEFT = 89;    // Left servo backward (reversed)
 
 // --- GLOBAL VARIABLES ---
 
@@ -62,50 +67,34 @@ enum states {
 
 // --- MOTOR CONTROL FUNCTIONS ---
 
+void motors_move(int right, int left) {
+  servoRight.attach(pinControlRight);
+  servoLeft.attach(pinControlLeft);
+  servoRight.write(right);
+  servoLeft.write(left);
+  delay(50); // Short pause for servo response
+}
+
 void moveForward() {
-  // Left motor forward
-  digitalWrite(MOTOR_LEFT_IN1, HIGH);
-  digitalWrite(MOTOR_LEFT_IN2, LOW);
-  analogWrite(MOTOR_LEFT_PWM, SPEED_FORWARD);
-  
-  // Right motor forward
-  digitalWrite(MOTOR_RIGHT_IN1, HIGH);
-  digitalWrite(MOTOR_RIGHT_IN2, LOW);
-  analogWrite(MOTOR_RIGHT_PWM, SPEED_FORWARD);
+  motors_move(SERVO_FORWARD_RIGHT, SERVO_FORWARD_LEFT);
 }
 
 void turnRight() {
-  // Left motor forward (faster)
-  digitalWrite(MOTOR_LEFT_IN1, HIGH);
-  digitalWrite(MOTOR_LEFT_IN2, LOW);
-  analogWrite(MOTOR_LEFT_PWM, SPEED_TURN);
-  
-  // Right motor backward or slow
-  digitalWrite(MOTOR_RIGHT_IN1, LOW);
-  digitalWrite(MOTOR_RIGHT_IN2, HIGH);
-  analogWrite(MOTOR_RIGHT_PWM, SPEED_TURN);
+  // Right servo backward, left servo forward
+  motors_move(SERVO_BACKWARD_RIGHT, SERVO_FORWARD_LEFT);
 }
 
 void turnLeft() {
-  // Left motor backward or slow
-  digitalWrite(MOTOR_LEFT_IN1, LOW);
-  digitalWrite(MOTOR_LEFT_IN2, HIGH);
-  analogWrite(MOTOR_LEFT_PWM, SPEED_TURN);
-  
-  // Right motor forward (faster)
-  digitalWrite(MOTOR_RIGHT_IN1, HIGH);
-  digitalWrite(MOTOR_RIGHT_IN2, LOW);
-  analogWrite(MOTOR_RIGHT_PWM, SPEED_TURN);
+  // Right servo forward, left servo backward
+  motors_move(SERVO_FORWARD_RIGHT, SERVO_BACKWARD_LEFT);
 }
 
 void stopMotors() {
-  digitalWrite(MOTOR_LEFT_IN1, LOW);
-  digitalWrite(MOTOR_LEFT_IN2, LOW);
-  analogWrite(MOTOR_LEFT_PWM, 0);
-  
-  digitalWrite(MOTOR_RIGHT_IN1, LOW);
-  digitalWrite(MOTOR_RIGHT_IN2, LOW);
-  analogWrite(MOTOR_RIGHT_PWM, 0);
+  motors_move(SERVO_STOP, SERVO_STOP);
+  // Detach servos to save power and reduce jitter
+  delay(100);
+  servoRight.detach();
+  servoLeft.detach();
 }
 
 // Callback function when a message is received
@@ -178,14 +167,8 @@ void setup() {
   set_microros_transports(); // Standard serial transport setup
   
   pinMode(LED_PIN, OUTPUT);
-  
-  // Initialize motor pins
-  pinMode(MOTOR_LEFT_PWM, OUTPUT);
-  pinMode(MOTOR_LEFT_IN1, OUTPUT);
-  pinMode(MOTOR_LEFT_IN2, OUTPUT);
-  pinMode(MOTOR_RIGHT_PWM, OUTPUT);
-  pinMode(MOTOR_RIGHT_IN1, OUTPUT);
-  pinMode(MOTOR_RIGHT_IN2, OUTPUT);
+  pinMode(pinFeedbackRight, INPUT);
+  pinMode(pinFeedbackLeft, INPUT);
   
   // Stop motors initially
   stopMotors();
